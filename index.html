@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Anvigen Thymol Study</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 20px;
+            padding: 44px 32px;
+            text-align: center;
+            max-width: 420px;
+            width: 100%;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.10);
+        }
+
+        .logo { font-size: 52px; margin-bottom: 12px; }
+
+        h1 {
+            color: #1b5e20;
+            font-size: 22px;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+
+        .subtitle {
+            color: #888;
+            font-size: 13px;
+            margin-bottom: 28px;
+        }
+
+        .status-box {
+            background: #f1f8e9;
+            border: 1px solid #c5e1a5;
+            border-radius: 12px;
+            padding: 18px 16px;
+            color: #33691e;
+            font-size: 14px;
+            line-height: 1.6;
+            margin-bottom: 20px;
+        }
+
+        .status-box.error {
+            background: #fdf3f3;
+            border-color: #ffcdd2;
+            color: #b71c1c;
+        }
+
+        .pad-badge {
+            display: inline-block;
+            background: #1b5e20;
+            color: white;
+            font-size: 12px;
+            font-weight: 700;
+            padding: 3px 10px;
+            border-radius: 20px;
+            margin: 6px 0;
+            letter-spacing: 0.5px;
+        }
+
+        .spinner {
+            width: 36px;
+            height: 36px;
+            border: 4px solid #e0e0e0;
+            border-top: 4px solid #2e7d32;
+            border-radius: 50%;
+            animation: spin 0.9s linear infinite;
+            margin: 16px auto 4px;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .step {
+            font-size: 13px;
+            color: #aaa;
+            margin-top: 8px;
+        }
+
+        .footer {
+            margin-top: 32px;
+            font-size: 12px;
+            color: #bbb;
+        }
+    </style>
+</head>
+<body>
+<div class="card">
+    <div class="logo">🐝</div>
+    <h1>Anvigen Thymol Study</h1>
+    <p class="subtitle">Varroa Mite Treatment Field Study — DE / PA / MD</p>
+
+    <div id="content">
+        <div class="status-box">
+            Please wait while we load your form...
+        </div>
+        <div class="spinner"></div>
+        <div class="step">Checking pad status...</div>
+    </div>
+
+    <div class="footer">
+        Questions? Contact <strong>sumedh@anvigen.com</strong>
+    </div>
+</div>
+
+<script>
+// ── CONFIGURATION ────────────────────────────────────────────
+const AIRTABLE_TOKEN = 'patCdkC7UqiF34DWC.5b8b8f08c1360d470c374658e0786657096a828d65bacd6c027fcd7d323c3b66';
+const BASE_ID        = 'appci6ON47jhPkAYQ';
+const TABLE_NAME     = 'Submissions';
+
+// Your two Jotform form URLs
+const PRE_FORM  = 'https://form.jotform.com/261883913696069';
+const POST_FORM = 'https://form.jotform.com/261884604713057';
+// ─────────────────────────────────────────────────────────────
+
+async function run() {
+    const content = document.getElementById('content');
+
+    // Step 1: Read Pad ID from URL — e.g. ?id=AVG-0001
+    const params = new URLSearchParams(window.location.search);
+    const padId  = params.get('id');
+
+    // No Pad ID found in URL — bad QR code or direct visit
+    if (!padId) {
+        content.innerHTML = `
+            <div class="status-box error">
+                ⚠️ <strong>Invalid QR Code</strong><br><br>
+                This QR code does not contain a valid Pad ID.<br>
+                Please contact Anvigen for assistance.
+            </div>`;
+        return;
+    }
+
+    // Show which pad we detected
+    content.innerHTML = `
+        <div class="status-box">
+            Detected pad:<br>
+            <span class="pad-badge">${padId}</span><br>
+            Checking submission status...
+        </div>
+        <div class="spinner"></div>
+        <div class="step">Looking up records in database...</div>`;
+
+    try {
+        // Step 2: Ask Airtable — does a Pre-Treatment record exist for this pad?
+        const formula = encodeURIComponent(
+            `AND({Pad ID}="${padId}",{Submission Type}="Pre-Treatment")`
+        );
+        const apiUrl = `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(TABLE_NAME)}?filterByFormula=${formula}&maxRecords=1`;
+
+        const res = await fetch(apiUrl, {
+            headers: { 'Authorization': `Bearer ${AIRTABLE_TOKEN}` }
+        });
+
+        if (!res.ok) {
+            throw new Error(`Database error (${res.status}). Please try again.`);
+        }
+
+        const data = await res.json();
+        const hasPreTreatment = data.records && data.records.length > 0;
+
+        if (hasPreTreatment) {
+            // ── PRE-TREATMENT EXISTS → route to POST form ──────────
+            const fields = data.records[0].fields;
+
+            // Pull beekeeper info from the pre-treatment record
+            const name  = fields['Beekeeper Name']  || '';
+            const email = fields['Beekeeper Email'] || '';
+            const phone = fields['Beekeeper Phone'] || '';
+            const hive  = fields['Hive Label']      || '';
+
+            content.innerHTML = `
+                <div class="status-box">
+                    ✅ <strong>Pre-treatment data found!</strong><br>
+                    <span class="pad-badge">${padId}</span><br><br>
+                    Opening your <strong>6-week follow-up form</strong>.<br>
+                    Your details are pre-filled — just enter your final mite count.
+                </div>
+                <div class="spinner"></div>
+                <div class="step">Redirecting to follow-up form...</div>`;
+
+            // Build post URL with beekeeper info pre-filled
+            const postUrl = `${POST_FORM}?padId=${enc(padId)}&fullName=${enc(name)}&email=${enc(email)}&phoneNumber=${enc(phone)}&hiveLabel=${enc(hive)}`;
+
+            setTimeout(() => { window.location.href = postUrl; }, 2000);
+
+        } else {
+            // ── NO PRE-TREATMENT → route to PRE form ───────────────
+            content.innerHTML = `
+                <div class="status-box">
+                    🐝 <strong>Welcome to the study!</strong><br>
+                    <span class="pad-badge">${padId}</span><br><br>
+                    Opening your <strong>pre-treatment form</strong>.<br>
+                    Please enter your baseline mite count before applying the pad.
+                </div>
+                <div class="spinner"></div>
+                <div class="step">Redirecting to pre-treatment form...</div>`;
+
+            const preUrl = `${PRE_FORM}?padId=${enc(padId)}`;
+
+            setTimeout(() => { window.location.href = preUrl; }, 2000);
+        }
+
+    } catch (err) {
+        content.innerHTML = `
+            <div class="status-box error">
+                ⚠️ <strong>Something went wrong</strong><br><br>
+                ${err.message}<br><br>
+                Please try scanning again or contact<br>
+                <strong>sumedh@anvigen.com</strong>
+            </div>`;
+    }
+}
+
+// Helper to encode URL parameters safely
+function enc(val) { return encodeURIComponent(val || ''); }
+
+// Run on page load
+run();
+</script>
+</body>
+</html>
